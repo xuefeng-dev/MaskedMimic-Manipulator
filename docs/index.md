@@ -1,0 +1,141 @@
+> 🚧 本文档还在建设中
+
+# MaskedMimic-Manipulator 
+
+*MaskedMimic-Manipulator 是基于 MaskedMimic 框架构建的稀疏控制人形操控系统，用于在 GRAB 等数据集上实现灵巧抓取等操作任务。*
+
+---
+
+## 概述
+
+### 与相关工作的关系
+
+本项目基于 **MaskedMimic 的开源代码**实现，研究目标与 NVIDIA 最新提出的 **MaskedManipulator** 有部分重叠，但二者在实现方式与训练目标上并不完全相同。由于 MaskedManipulator 也是在 MaskedMimic 基础上扩展，因此两者在能力和框架上会有一定相似性，这是方法路线上的自然结果，而非直接参考其实现。
+
+#### **相同点**
+
+- **都支持稀疏约束控制**：包括利用 VR/动捕设备的头部与手部位姿来驱动全身动作补全。
+- **都能基于物体位姿目标进行操控**：例如指定物体最终应该处于某个位置或沿某条轨迹移动。
+- **都继承自 MaskedMimic 的端到端模仿学习框架**：因此在任务表述、输入输出形式、动作生成方式上具有部分一致性。
+
+#### **不同点**
+
+- **奖励函数结构更轻量，不依赖手指—物体最近点方向关系**： MaskedManipulator 使用较复杂的表面点几何约束（例如最近点方向一致性），需要实时计算大量指尖/物体表面距离。本项目完全移除了这类几何约束，改以更简洁的接触/姿态目标奖励，因此**计算量显著减少**，训练稳定性更高。
+
+- **无需修复GRAB中物体位姿：** 直接在重定向过程中适配不同体型带来的手-物品相对位姿误差。
+
+#### **不足之处**
+
+- **训练数据规模与任务范围较小**： 由于个人实验GPU 资源有限，本项目仅训练 GRAB 数据中的“抓取阶段”，未完成整段“抓取—移动—放下”的全序列模仿，因此任务覆盖范围相比 MaskedManipulator 更聚焦于**高质量抓取动作本身**。
+
+---
+
+## 效果展示
+
+一个统一的 MaskedManipulator 控制器可以在不同条件（输入形式）下工作，从而生成丰富多样的行为。\
+下面我们按照网页结构，把几个典型应用场景拆分成小节展示。
+
+### 1. 运动跟踪（Motion Tracking）
+
+在这种设置中，策略接收一组目标关节的位置 / 朝向（可以是全身，也可以是部分），\
+目标是生成一段**物理上合理**的全身动作，使其尽可能符合这些约束。
+
+常见应用包括：
+
+- **场景重定向（scene retargeting）**：\
+  在新场景中重现同一段参考动作，例如换不同道具 / 不同地形。
+- **远程操作（teleoperation）**：\
+  从头显和手柄的传感器信号中，推断出完整的人体动作。
+
+#### 1.1 全身跟踪（Full-body Tracking）
+
+给定完整的动作捕捉序列，我们的方法可以在物理仿真中重建出与之匹配、\
+同时又保持动态合理的全身运动。
+
+```html
+<!-- 全身运动跟踪示例视频 -->
+<div align="center">
+  <video controls width="640">
+    <source src="full_body_tracking.mp4" type="video/mp4" />
+    您的浏览器不支持 video 标签。
+  </video>
+</div>
+```
+
+---
+
+### 2. 稀疏跟踪（Sparse Tracking）
+
+在稀疏跟踪场景中，策略只接收到**部分关节**或**物体的位置信息**，\
+依然需要生成与这些约束相一致的全身动作。
+
+一个典型例子是 VR 场景下：
+
+- 输入只有**头部**和**双手**的位姿，以及
+- 某些被操作物体的位置信息；
+
+系统需要补全**身体、腿部、躯干**等的动作，使得整体看起来自然、合理。
+
+#### 2.1 远程操作（Teleoperation）
+
+在只提供头、手以及物体约束的情况下，\
+MaskedManipulator 仍然能够生成自然的全身动作，\
+实现类似 VR 远程操控中的“从稀疏跟踪推断全身行为”的能力。
+
+```html
+<!-- 稀疏跟踪 / 远程操作示例视频 -->
+<div align="center">
+  <video controls width="640">
+    <source src="sparse_tracking_teleoperation.mp4" type="video/mp4" />
+    您的浏览器不支持 video 标签。
+  </video>
+</div>
+```
+
+---
+
+### 3. 物体目标（Object Goals）
+
+在这一类任务中，策略会被告知**未来某个时间点物体应该处于的位置 / 姿态**。\
+控制器的目标是在指定时间内，将物体移动到对应的目标状态。
+
+这类设置可以看作是一种**目标导向的操控**：
+
+- 输入：物体的目标轨迹 / 目标位姿；
+- 输出：角色的全身动作以及物体的运动过程；
+- 要求：到达目标的同时保持动作自然、物理合理。
+
+```html
+<div align="center">
+  <video controls width="640">
+    <source src="object_goal_manipulation.mp4" type="video/mp4" />
+    您的浏览器不支持 video 标签。
+  </video>
+</div>
+```
+
+---
+
+### 4. 生成行为（Generative Behavior）
+
+在第三种设置中，MaskedManipulator **不再接收任何显式约束**：
+
+- 没有明确的目标位姿；
+- 没有追踪参考动作；
+- 也没有物体的目标轨迹。
+
+策略只需要根据当前场景中的物体，生成自然的全身互动行为——\
+例如站在桌前，会自动做出触碰、把玩、整理等动作。
+
+```html
+<div align="center">
+  <video controls width="640">
+    <source src="generative_behavior_1.mp4" type="video/mp4" />
+    您的浏览器不支持 video 标签。
+  </video>
+</div>
+```
+
+## 相关参考：
+1. MaskedMimic- Unified Physics-Based Character Control Through Masked Motion Inpainting
+2. PULSE -UNIVERSAL HUMANOID MOTION REPRESENTATIONS FOR PHYSICS-BASED CONTROL
